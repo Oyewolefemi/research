@@ -1,14 +1,14 @@
 library(shiny)
 library(shinydashboard)
-library(dplyr)      # Replacement for tidyverse
+library(dplyr)      # Replaces 'tidyverse' to save memory
 library(ggplot2)
 library(tidyr)
 library(readr)
 library(stringr)
 library(DBI)
 library(RPostgres)
-library(httr2)      # Required for the Search Engine
-library(jsonlite)   # Required for the Search Engine
+library(httr2)      # Essential for the Search Engine
+library(jsonlite)   # Essential for the Search Engine
 
 # Database Connection
 db_connect <- function() {
@@ -17,7 +17,7 @@ db_connect <- function() {
     dbname = "research_db",
     host = "localhost",
     user = "research_user",
-    password = "Sefunmi@8"  # <--- DIRECT PASSWORD (No Sys.getenv)
+    password = "Sefunmi@8"  # <--- FIXED: Using the password directly
   )
 }
 
