@@ -1,25 +1,27 @@
-# global.R
 library(shiny)
 library(shinydashboard)
-library(tidyverse)
-library(DBI)
-library(RPostgres)
+library(dplyr)      # Data manipulation
+library(ggplot2)    # Plotting
+library(tidyr)      # Tidy data
+library(readr)      # Reading files
+library(stringr)    # String tools
+library(DBI)        # Database Interface
+library(RPostgres)  # Postgres Driver
+library(httr2)      # Web Requests (New!)
+library(jsonlite)   # JSON Parsing (New!)
 
-# Database Connection (Reads secrets from the Server Environment)
-# We do not hardcode passwords here!
+# Database Connection
 db_connect <- function() {
   dbConnect(
     RPostgres::Postgres(),
     dbname = "research_db",
-    host = "localhost", # On VPS this is localhost
+    host = "localhost",
     user = "research_user",
-    password = Sys.getenv("Sefunmi@8") # Magic: Reads hidden password
+    # OPTION A: If you want to be safe (Recommended)
+    # Ensure your .Renviron file on the VPS has: DB_PASSWORD=Sefunmi@8
+    password = Sys.getenv("Sefunmi@8")
+    
+    # OPTION B: If Option A is too hard, uncomment the line below (Less Secure)
+    # password = "Sefunmi@8" 
   )
-}
-
-# Load Watchlist (Helper function)
-get_watchlist <- function() {
-  con <- db_connect()
-  on.exit(dbDisconnect(con))
-  dbGetQuery(con, "SELECT * FROM watch_list WHERE is_active = TRUE")
 }
