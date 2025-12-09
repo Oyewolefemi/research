@@ -104,17 +104,10 @@ dashboardPage(
       tabItem(tabName = "settings",
         fluidRow(
           box(
-            title = "System Configuration", status = "warning", solidHeader = TRUE, width = 6,
-            h4("Database Settings"),
-            textInput("db_host", "Database Host", value = "localhost"),
-            textInput("db_name", "Database Name", value = "research_db"),
-            textInput("db_user", "Database User", value = "research_user"),
-            # Password field removed (Handled by Login Modal)
-            helpText(icon("lock"), " Access authenticated via Secure Login."),
-            
-            hr(),
-            actionButton("test_db_btn", "Test Connection", class = "btn-info"),
-            verbatimTextOutput("db_test_result")
+            title = "System Configuration", status = "success", solidHeader = TRUE, width = 6,
+            h4("Database Mode: SQLite"),
+            p("The system is using an internal local database. No configuration is required."),
+            p("Data file: /research_data.db")
           ),
           
           box(

@@ -6,59 +6,80 @@ library(tidyr)
 library(readr)
 library(stringr)
 library(DBI)
-library(RPostgres)
+library(RSQLite) # Changed from RPostgres to RSQLite
 library(httr2)
 library(jsonlite)
 
-# Load Configuration (keeps other settings like host/user)
-source("config.R", local = TRUE)
+# Load Configuration (mostly for API keys now)
+# We wrap this in tryCatch so it doesn't crash if config is missing
+tryCatch({
+  source("config.R", local = TRUE)
+}, error = function(e) {
+  # Defaults if config.R is missing
+  APP_CONFIG <<- list(app_name = "Research Hub", version = "1.0.0")
+})
 
 # Logging Function
 log_message <- function(level = "INFO", message) {
   timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   log_entry <- sprintf("[%s] %s: %s\n", timestamp, level, message)
-  cat(log_entry) # Print to console
+  cat(log_entry)
   
   log_dir <- "logs"
   if (!dir.exists(log_dir)) dir.create(log_dir)
   write(log_entry, file = file.path(log_dir, "app.log"), append = TRUE)
 }
 
-# --- UPDATED DATABASE CONNECTION ---
-# Now accepts a password argument. Defaults to config if not provided.
-db_connect <- function(password = NULL) {
-  
-  # Logic: Use the dynamic password if provided, otherwise fall back to config file
-  pwd_to_use <- if (!is.null(password) && password != "") password else DB_CONFIG$password
-  
+# --- SIMPLIFIED DATABASE CONNECTION (SQLite) ---
+db_connect <- function() {
   tryCatch({
-    con <- dbConnect(
-      RPostgres::Postgres(),
-      dbname = DB_CONFIG$dbname,
-      host = DB_CONFIG$host,
-      port = DB_CONFIG$port,
-      user = DB_CONFIG$user,
-      password = pwd_to_use, # Uses the dynamic password
-      connect_timeout = 10
-    )
-    
-    # Test connection
-    dbGetQuery(con, "SELECT 1 AS test")
+    # Connects to a file named 'research_data.db' in the app folder
+    con <- dbConnect(RSQLite::SQLite(), "research_data.db")
     return(con)
-    
   }, error = function(e) {
     log_message("ERROR", paste("Database connection failed:", e$message))
     return(NULL)
   })
 }
 
-# --- UPDATED HELPERS TO ACCEPT PASSWORD ---
-
-db_query_safe <- function(query, params = NULL, password = NULL) {
-  con <- db_connect(password) # Pass password here
-  if (is.null(con)) {
-    return(list(success = FALSE, data = NULL, error = "Connection failed"))
+# --- AUTO-INITIALIZE TABLES ---
+# This runs once when the app starts to ensure tables exist
+init_db <- function() {
+  con <- db_connect()
+  if (!is.null(con)) {
+    # 1. Watch List Table
+    dbExecute(con, "CREATE TABLE IF NOT EXISTS watch_list (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      keyword TEXT NOT NULL,
+      source_type TEXT,
+      is_active BOOLEAN DEFAULT 1,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )")
+    
+    # 2. Found Articles Table
+    dbExecute(con, "CREATE TABLE IF NOT EXISTS found_articles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT,
+      url TEXT UNIQUE,
+      published_date DATE,
+      source TEXT,
+      abstract TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )")
+    
+    dbDisconnect(con)
+    log_message("INFO", "Database tables verified/created.")
   }
+}
+
+# Run initialization
+init_db()
+
+# --- HELPER FUNCTIONS ---
+
+db_query_safe <- function(query, params = NULL) {
+  con <- db_connect()
+  if (is.null(con)) return(list(success = FALSE, error = "Connection failed"))
   
   tryCatch({
     if (!is.null(params)) {
@@ -66,49 +87,30 @@ db_query_safe <- function(query, params = NULL, password = NULL) {
     } else {
       result <- dbGetQuery(con, query)
     }
-    return(list(success = TRUE, data = result, error = NULL))
-    
+    return(list(success = TRUE, data = result))
   }, error = function(e) {
-    log_message("ERROR", paste("Query failed:", e$message))
-    return(list(success = FALSE, data = NULL, error = e$message))
-    
+    return(list(success = FALSE, error = e$message))
   }, finally = {
-    if (!is.null(con)) dbDisconnect(con)
+    dbDisconnect(con)
   })
 }
 
-db_execute_safe <- function(query, params = NULL, password = NULL) {
-  con <- db_connect(password) # Pass password here
-  if (is.null(con)) {
-    return(list(success = FALSE, error = "Connection failed"))
-  }
+db_execute_safe <- function(query, params = NULL) {
+  con <- db_connect()
+  if (is.null(con)) return(list(success = FALSE, error = "Connection failed"))
   
   tryCatch({
     if (!is.null(params)) {
-      rows_affected <- dbExecute(con, query, params = params)
+      rows <- dbExecute(con, query, params = params)
     } else {
-      rows_affected <- dbExecute(con, query)
+      rows <- dbExecute(con, query)
     }
-    log_message("INFO", paste("Query executed:", rows_affected, "rows affected"))
-    return(list(success = TRUE, rows = rows_affected, error = NULL))
-    
+    return(list(success = TRUE, rows = rows))
   }, error = function(e) {
-    log_message("ERROR", paste("Execute failed:", e$message))
     return(list(success = FALSE, error = e$message))
-    
   }, finally = {
-    if (!is.null(con)) dbDisconnect(con)
+    dbDisconnect(con)
   })
-}
-
-get_watchlist <- function(password = NULL) {
-  result <- db_query_safe("SELECT * FROM watch_list WHERE is_active = TRUE", password = password)
-  
-  if (result$success) {
-    return(result$data)
-  } else {
-    return(data.frame())
-  }
 }
 
 validate_csv <- function(filepath) {
@@ -121,5 +123,3 @@ validate_csv <- function(filepath) {
     return(list(valid = FALSE, message = paste("Invalid CSV:", e$message)))
   })
 }
-
-log_message("INFO", paste("Application starting -", APP_CONFIG$app_name, "v", APP_CONFIG$version))
