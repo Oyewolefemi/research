@@ -35,7 +35,6 @@ function(input, output, session) {
   })
   
   # --- 2. SEARCH ENGINE FUNCTION ---
-  # Updated to accept password argument
   fetch_papers <- function(keyword, db_password) {
     clean_query <- str_replace_all(keyword, " ", "+")
     url <- paste0("https://api.semanticscholar.org/graph/v1/paper/search?query=", clean_query, "&limit=5&fields=title,url,publicationDate,venue,abstract")
@@ -52,7 +51,7 @@ function(input, output, session) {
       # Use dynamic password for connection
       con <- db_connect(password = db_password)
       
-      if(is.null(con)) return(FALSE) # Safety check
+      if(is.null(con)) return(FALSE)
       
       for (paper in data$data) {
         exists <- dbGetQuery(con, paste0("SELECT id FROM found_articles WHERE url = '", paper$url, "'"))
@@ -86,13 +85,13 @@ function(input, output, session) {
     
     id <- showNotification("Research Agent initializing...", type = "message", duration = NULL)
     
-    # Save Topic (Using authenticated password)
+    # Save Topic
     con <- db_connect(password = auth_pass())
     dbExecute(con, "INSERT INTO watch_list (keyword, source_type) VALUES ($1, $2)",
               params = list(input$topic_input, input$source_input))
     dbDisconnect(con)
     
-    # Run Search (Passing authenticated password)
+    # Run Search
     showNotification("Scanning scientific databases...", id = id, type = "warning")
     success <- fetch_papers(input$topic_input, db_password = auth_pass())
     removeNotification(id)
@@ -109,7 +108,7 @@ function(input, output, session) {
   refresh_trigger <- reactiveVal(0)
   
   output$articles_table <- renderTable({
-    req(auth_pass()) # Wait for login
+    req(auth_pass())
     refresh_trigger()
     
     con <- db_connect(password = auth_pass())
@@ -128,5 +127,42 @@ function(input, output, session) {
   # --- 5. DATA LAB PLOT ---
   output$data_plot <- renderPlot({
     plot(1:10, main = "Upload Data to Activate Lab")
+  })
+  
+  # --- 6. DASHBOARD WIDGETS (MISSING PIECES RESTORED) ---
+  
+  # Helper to get counts safely
+  get_count <- function(table) {
+    req(auth_pass())
+    res <- db_query_safe(paste0("SELECT COUNT(*) as count FROM ", table), password = auth_pass())
+    if(res$success) return(res$data$count) else return(0)
+  }
+
+  output$total_topics <- renderValueBox({
+    valueBox(get_count("watch_list"), "Active Topics", icon = icon("list"), color = "aqua")
+  })
+  
+  output$total_articles <- renderValueBox({
+    valueBox(get_count("found_articles"), "Articles Found", icon = icon("book"), color = "green")
+  })
+  
+  output$data_uploads <- renderValueBox({
+    # Placeholder
+    valueBox(0, "Data Uploads", icon = icon("upload"), color = "yellow")
+  })
+  
+  output$system_health <- renderValueBox({
+    req(auth_pass()) # Only show if connected
+    valueBox("Online", "System Status", icon = icon("heartbeat"), color = "green")
+  })
+  
+  output$recent_activity <- renderTable({
+    req(auth_pass())
+    con <- db_connect(password = auth_pass())
+    if(is.null(con)) return(NULL)
+    
+    data <- dbGetQuery(con, "SELECT title, source, published_date FROM found_articles ORDER BY id DESC LIMIT 5")
+    dbDisconnect(con)
+    data
   })
 }

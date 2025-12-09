@@ -109,9 +109,11 @@ dashboardPage(
             textInput("db_host", "Database Host", value = "localhost"),
             textInput("db_name", "Database Name", value = "research_db"),
             textInput("db_user", "Database User", value = "research_user"),
-            passwordInput("db_password", "Database Password"),
-            actionButton("test_db_btn", "Test Connection", class = "btn-info"),
+            # Password field removed (Handled by Login Modal)
+            helpText(icon("lock"), " Access authenticated via Secure Login."),
+            
             hr(),
+            actionButton("test_db_btn", "Test Connection", class = "btn-info"),
             verbatimTextOutput("db_test_result")
           ),
           
