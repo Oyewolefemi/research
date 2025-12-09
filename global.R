@@ -1,34 +1,36 @@
 library(shiny)
 library(shinydashboard)
-library(dplyr)      # Replaces 'tidyverse' to save memory
+library(dplyr)
 library(ggplot2)
 library(tidyr)
 library(readr)
 library(stringr)
 library(DBI)
 library(RPostgres)
-library(httr2)      # Essential for the Search Engine
-library(jsonlite)   # Essential for the Search Engine
+library(httr2)
+library(jsonlite)
 
-# Load Configuration
+# Load Configuration (keeps other settings like host/user)
 source("config.R", local = TRUE)
 
 # Logging Function
 log_message <- function(level = "INFO", message) {
   timestamp <- format(Sys.time(), "%Y-%m-%d %H:%M:%S")
   log_entry <- sprintf("[%s] %s: %s\n", timestamp, level, message)
+  cat(log_entry) # Print to console
   
-  # Print to console
-  cat(log_entry)
-  
-  # Write to log file
   log_dir <- "logs"
   if (!dir.exists(log_dir)) dir.create(log_dir)
   write(log_entry, file = file.path(log_dir, "app.log"), append = TRUE)
 }
 
-# Database Connection Function with Error Handling
-db_connect <- function() {
+# --- UPDATED DATABASE CONNECTION ---
+# Now accepts a password argument. Defaults to config if not provided.
+db_connect <- function(password = NULL) {
+  
+  # Logic: Use the dynamic password if provided, otherwise fall back to config file
+  pwd_to_use <- if (!is.null(password) && password != "") password else DB_CONFIG$password
+  
   tryCatch({
     con <- dbConnect(
       RPostgres::Postgres(),
@@ -36,13 +38,12 @@ db_connect <- function() {
       host = DB_CONFIG$host,
       port = DB_CONFIG$port,
       user = DB_CONFIG$user,
-      password = DB_CONFIG$password,
+      password = pwd_to_use, # Uses the dynamic password
       connect_timeout = 10
     )
     
     # Test connection
     dbGetQuery(con, "SELECT 1 AS test")
-    log_message("INFO", "Database connection established")
     return(con)
     
   }, error = function(e) {
@@ -51,9 +52,10 @@ db_connect <- function() {
   })
 }
 
-# Safe Database Query Function
-db_query_safe <- function(query, params = NULL) {
-  con <- db_connect()
+# --- UPDATED HELPERS TO ACCEPT PASSWORD ---
+
+db_query_safe <- function(query, params = NULL, password = NULL) {
+  con <- db_connect(password) # Pass password here
   if (is.null(con)) {
     return(list(success = FALSE, data = NULL, error = "Connection failed"))
   }
@@ -64,7 +66,6 @@ db_query_safe <- function(query, params = NULL) {
     } else {
       result <- dbGetQuery(con, query)
     }
-    
     return(list(success = TRUE, data = result, error = NULL))
     
   }, error = function(e) {
@@ -76,9 +77,8 @@ db_query_safe <- function(query, params = NULL) {
   })
 }
 
-# Safe Database Execute Function
-db_execute_safe <- function(query, params = NULL) {
-  con <- db_connect()
+db_execute_safe <- function(query, params = NULL, password = NULL) {
+  con <- db_connect(password) # Pass password here
   if (is.null(con)) {
     return(list(success = FALSE, error = "Connection failed"))
   }
@@ -89,7 +89,6 @@ db_execute_safe <- function(query, params = NULL) {
     } else {
       rows_affected <- dbExecute(con, query)
     }
-    
     log_message("INFO", paste("Query executed:", rows_affected, "rows affected"))
     return(list(success = TRUE, rows = rows_affected, error = NULL))
     
@@ -102,9 +101,8 @@ db_execute_safe <- function(query, params = NULL) {
   })
 }
 
-# Load Watchlist Function
-get_watchlist <- function() {
-  result <- db_query_safe("SELECT * FROM watch_list WHERE is_active = TRUE")
+get_watchlist <- function(password = NULL) {
+  result <- db_query_safe("SELECT * FROM watch_list WHERE is_active = TRUE", password = password)
   
   if (result$success) {
     return(result$data)
@@ -113,25 +111,15 @@ get_watchlist <- function() {
   }
 }
 
-# Validate CSV Upload
 validate_csv <- function(filepath) {
   tryCatch({
     data <- read.csv(filepath, nrows = 5)
-    
-    if (nrow(data) == 0) {
-      return(list(valid = FALSE, message = "File is empty"))
-    }
-    
-    if (ncol(data) == 0) {
-      return(list(valid = FALSE, message = "No columns found"))
-    }
-    
+    if (nrow(data) == 0) return(list(valid = FALSE, message = "File is empty"))
+    if (ncol(data) == 0) return(list(valid = FALSE, message = "No columns found"))
     return(list(valid = TRUE, message = "File is valid", preview = data))
-    
   }, error = function(e) {
     return(list(valid = FALSE, message = paste("Invalid CSV:", e$message)))
   })
 }
 
-# Initialize on Startup
 log_message("INFO", paste("Application starting -", APP_CONFIG$app_name, "v", APP_CONFIG$version))
