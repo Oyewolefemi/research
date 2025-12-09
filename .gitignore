@@ -4,3 +4,9 @@
 .DS_Store
 .Renviron
 config.R
+*.log
+logs/
+data/*.csv
+!data/sample_data.csv
+.httr-oauth
+*.Rproj
